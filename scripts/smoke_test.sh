@@ -114,9 +114,12 @@ if [[ "${redirect}" == "302 ${AUTH_EXTERNAL_URL}/"* ]]; then pass "unauthenticat
 else bad "unauthenticated request was not redirected to Authentik (${redirect:0:80})"; fi
 
 # 4
+# Refused means Authentik answered and said no: a redirect to login or a 401. Anything
+# else (a 404 from an outpost that does not know the host, a 502) is a broken gateway
+# that happens to also refuse, and must not count as a pass.
 code="$(status -u "svc-assistant:wrong-${RANDOM}" "${LLM_EXTERNAL_URL}/api/tags")"
-if [[ "${code}" != 200 ]]; then pass "wrong service token refused (${code})"
-else bad "wrong service token was accepted"; fi
+if [[ "${code}" == 302 || "${code}" == 401 ]]; then pass "wrong service token refused (${code})"
+else bad "wrong service token not refused by Authentik (got ${code})"; fi
 
 # 5
 check "service token accepted" 200 "$(status -u "svc-assistant:${LLM_CLIENT_TOKEN}" "${LLM_EXTERNAL_URL}/api/tags")"
@@ -147,9 +150,13 @@ check "internal listener refuses /api/pull" 403 "$(internal --post-data '{}' htt
 # 8, 9
 if create_users; then
   check "browser login as a member of llm-users reaches the model" 200 "$(sso_status "${MEMBER}" "${SMOKE_PASS}")"
+  # 000 means the login flow itself broke, which proves nothing about the policy.
   code="$(sso_status "${OUTSIDER}" "${SMOKE_PASS}")"
-  if [[ "${code}" != 200 ]]; then pass "browser login outside llm-users is refused (${code})"
-  else bad "a user outside llm-users reached the model"; fi
+  case "${code}" in
+    302|403) pass "browser login outside llm-users is refused (${code})" ;;
+    200)     bad "a user outside llm-users reached the model" ;;
+    *)       bad "browser login outside llm-users could not be tested (got ${code})" ;;
+  esac
 else
   bad "could not create the smoke test users"
 fi

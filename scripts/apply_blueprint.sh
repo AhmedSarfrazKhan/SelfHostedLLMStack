@@ -51,10 +51,30 @@ for attempt in $(seq 1 "${ATTEMPTS}"); do
   current="$(state 2>/dev/null || echo unavailable)"
   if [[ "${current}" == "${EXPECTED}" ]]; then
     log "blueprint applied (application, 2 policy bindings, service token, outpost binding)"
-    exit 0
+    break
   fi
   echo "    attempt ${attempt}/${ATTEMPTS}: state ${current}, expected ${EXPECTED}; Authentik may still be bootstrapping"
   sleep 5
 done
 
-fail "blueprint did not converge. Counts are application|bindings|token|outpost. See: docker compose logs authentik-worker"
+[[ "${current}" == "${EXPECTED}" ]] \
+  || fail "blueprint did not converge. Counts are application|bindings|token|outpost. See: docker compose logs authentik-worker"
+
+# The database being right is not the gateway being right. The embedded outpost loads
+# its providers asynchronously, and until it has, forward auth answers 404 for the LLM
+# host. CI hit exactly that: blueprint applied, every request 404. So wait until an
+# anonymous request is redirected to Authentik, which only happens once the outpost
+# knows the host.
+load_env
+PORT="${GATEWAY_PORT:-8480}"
+for attempt in $(seq 1 60); do
+  got="$(curl -s -o /dev/null -w '%{http_code} %{redirect_url}' --max-time 10 \
+         --connect-to "::127.0.0.1:${PORT}" "${LLM_EXTERNAL_URL}/api/version" || true)"
+  if [[ "${got}" == "302 ${AUTH_EXTERNAL_URL}/"* ]]; then
+    log "outpost is serving ${LLM_EXTERNAL_URL}"
+    exit 0
+  fi
+  echo "    outpost not serving the LLM host yet (${got%% *}), attempt ${attempt}/60"
+  sleep 5
+done
+fail "the outpost never started serving ${LLM_EXTERNAL_URL}. See: docker compose logs authentik-server"
