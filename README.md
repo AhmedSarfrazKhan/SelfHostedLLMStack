@@ -111,6 +111,29 @@ CI runs this against the full stack on every pull request, then takes a backup a
 the restore drill against it. The deploy workflow runs it after every deploy and rolls
 back when it fails.
 
+## What the gate caught on its first day
+
+Everything below passed on the development host and failed in CI, on a clean runner
+with different timing. Each was fixed in a pull request that had to pass the same gate.
+
+- **A volume race on first install.** The Authentik server and worker share a volume,
+  and Docker copies the image's files into it once per container. Started together, the
+  two copies collided and one container failed to create. The worker now starts after the
+  server is healthy.
+- **A status field that lies.** On a fresh install Authentik's own first attempt at the
+  SSO blueprint runs before the default flows it refers to exist, and records `error`
+  permanently, even after a later apply succeeds. `apply_blueprint.sh` now checks the
+  objects the gateway depends on instead, and so does the restore drill.
+- **A gateway that was not ready.** Blueprint applied, every request still 404: the
+  outpost loads providers asynchronously. `apply_blueprint.sh` now waits until an
+  anonymous request is actually redirected to login.
+- **Two checks that passed for the wrong reason.** "Wrong token refused" accepted a 404,
+  and "outsider refused" accepted a login flow that never ran. A broken gateway refuses
+  everything, so both now require Authentik's specific answer.
+
+The development host won every one of those races. A gate that only runs where the
+code was written would have shipped all four.
+
 ## Backups you have actually restored
 
 `scripts/backup.sh` dumps the Authentik database, archives its data volume, and stores
@@ -123,14 +146,14 @@ is in it, and fails if it took longer than the RTO allows:
 
 ```
 $ scripts/restore_drill.sh
-==> restoring snapshot 6d5e17a3
+==> restoring snapshot b004642e
 ==> starting a throwaway PostgreSQL (no network)
 ==> restoring the Authentik database
     users                                      1
     LLM gateway application                    1
     llm-users group bindings                   1
     service account app passwords              1
-    applied blueprints                         1
+    LLM provider bound to the embedded outpost 1
 ==> checking archives
     authentik-data.tgz                         2 entries
 ==> restore completed in 0m10s (limit 15m00s)
