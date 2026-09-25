@@ -123,8 +123,17 @@ services:
     # Authentik can create outposts as containers. This stack uses the embedded
     # outpost only, so the worker gets neither. A process that holds the Docker socket
     # holds root on the host.
+    #
+    # The worker waits for a healthy server, not just a healthy database. Both mount
+    # the same named volume, and on a fresh install Docker copies the image's /data
+    # into the empty volume for each container that mounts it. Created at the same
+    # moment, both copies try to create the same symlink and one fails with
+    # "failed to create symlink ... /data/media". CI hit this on its first run; the
+    # development host had won the race by luck. Ordering them removes the race.
     depends_on:
       authentik-db:
+        condition: service_healthy
+      authentik-server:
         condition: service_healthy
     volumes:
       - authentik_data:/data
