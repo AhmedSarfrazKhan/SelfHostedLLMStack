@@ -16,6 +16,8 @@ source "$(dirname "$0")/lib.sh"
 load_env
 
 REGISTRY="${OLLAMA_REGISTRY:-https://registry.ollama.ai}"
+MANIFEST="$(mktemp)"
+trap 'rm -f "${MANIFEST}"' EXIT
 
 # name:tag -> the registry manifest URL. Bare names live under library/.
 manifest_url() {
@@ -26,9 +28,19 @@ manifest_url() {
 
 grep -vE '^[[:space:]]*(#|$)' config/models.lock | while read -r model pinned; do
   log "checking ${model} upstream"
-  remote="$(curl -fsSL -H 'Accept: application/vnd.docker.distribution.manifest.v2+json' \
-            "$(manifest_url "${model}")" | sha256sum | cut -d' ' -f1)" \
-    || fail "could not fetch the ${model} manifest from ${REGISTRY}"
+  # If the registry cannot be reached, nothing is pulled: weights that cannot be
+  # checked are never fetched. The local copy is then verified against the pin by
+  # assert_model.sh below, which is what decides whether this script passes. So an
+  # offline host with the right model deploys, and one without it fails.
+  # Hashed from a file, byte for byte: capturing the body in a variable would strip
+  # any trailing newline and silently change the digest.
+  if ! curl -fsSL --retry 3 --retry-delay 2 --max-time 30 -o "${MANIFEST}" \
+        -H 'Accept: application/vnd.docker.distribution.manifest.v2+json' \
+        "$(manifest_url "${model}")"; then
+    echo "WARNING: could not reach ${REGISTRY} to check ${model}; not pulling, verifying the local copy" >&2
+    continue
+  fi
+  remote="$(sha256sum "${MANIFEST}" | cut -d' ' -f1)"
 
   if [[ "${remote}" != "${pinned}" ]]; then
     echo "FAIL: ${model} moved upstream." >&2

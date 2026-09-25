@@ -69,8 +69,27 @@ local copy stays as long as the `ollama_models` volume does.
 
 ## Routine changes
 
-Every change goes through a pull request so CI brings the full stack up with it. Then
-the deploy workflow applies it and rolls back if the smoke test fails.
+Every change goes through a pull request so CI brings the full stack up with it. Then,
+on the host:
+
+```bash
+scripts/deploy.sh --pull
+```
+
+It fetches `main`, snapshots the Authentik database, deploys, restarts the gateway so it
+loads the new config, applies the blueprint, checks the model and runs the smoke test.
+If anything fails it restores the snapshot and checks out the previous commit, together,
+and leaves the checkout on that commit (detached). Fix forward in a pull request, then
+`git checkout main`.
+
+The reference host has no GitHub runner on purpose: the repository is public, and a
+self-hosted runner on a public repository can be made to run a stranger's code on the
+host. `.github/workflows/deploy.yml` calls the same script, for a private repository on
+a dedicated host.
+
+Never `git pull` on the host without deploying. The running containers would keep the
+old config while the checkout shows the new one, and the next smoke test fails on
+purpose ("Caddyfile changed after the gateway started").
 
 ### Update an image
 

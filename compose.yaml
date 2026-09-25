@@ -108,7 +108,10 @@ services:
         condition: service_healthy
     volumes:
       - authentik_data:/data
-      - ./config/authentik/blueprints:/blueprints/custom:ro
+      # A directory above the blueprint, not the blueprint's own directory. See the
+      # note on the gateway's config mount: git replaces what it updates, and a bind
+      # mount keeps pointing at what was there when the container started.
+      - ./config/authentik:/blueprints/custom:ro
     networks: [edge, authdb]
     mem_limit: 1g
     shm_size: 512mb
@@ -137,7 +140,10 @@ services:
         condition: service_healthy
     volumes:
       - authentik_data:/data
-      - ./config/authentik/blueprints:/blueprints/custom:ro
+      # A directory above the blueprint, not the blueprint's own directory. See the
+      # note on the gateway's config mount: git replaces what it updates, and a bind
+      # mount keeps pointing at what was there when the container started.
+      - ./config/authentik:/blueprints/custom:ro
     networks: [authdb, edge]
     mem_limit: 1g
     shm_size: 512mb
@@ -158,7 +164,12 @@ services:
       # anything beyond the host; see docs/runbook.md. Nothing here listens publicly.
       - "${GATEWAY_BIND:-127.0.0.1}:${GATEWAY_PORT:-8480}:80"
     volumes:
-      - ./config/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      # The directory, not the file. `git pull` does not edit a file in place, it
+      # writes a new one and renames it over the old. A single-file bind mount keeps
+      # pointing at the old one, so the container goes on reading config that no
+      # longer exists on disk, and the deploy that changed it reports success. Found by
+      # deploying a deliberately broken Caddyfile and watching the smoke test pass.
+      - ./config/caddy:/etc/caddy:ro
       - caddy_data:/data
     networks: [edge, backend, llm]
     mem_limit: 128m
