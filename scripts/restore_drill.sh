@@ -75,7 +75,9 @@ expect "users"                                  1 "select count(*) from authenti
 expect "LLM gateway application"                1 "select count(*) from authentik_core_application where slug = 'llm'"
 expect "llm-users group bindings"               1 "select count(*) from authentik_policies_policybinding b join authentik_core_group g on g.group_uuid = b.group_id where g.name = 'llm-users'"
 expect "service account app passwords"          1 "select count(*) from authentik_core_token where intent = 'app_password'"
-expect "applied blueprints"                     1 "select count(*) from authentik_blueprints_blueprintinstance where name = 'selfhostedllmstack' and status = 'successful'"
+# Not the blueprint's recorded status: that can say `error` on a working install (see
+# apply_blueprint.sh). The objects are what the gateway actually depends on.
+expect "LLM provider bound to the embedded outpost" 1 "select count(*) from authentik_outposts_outpost_providers op join authentik_outposts_outpost o on o.uuid = op.outpost_id join authentik_core_application a on a.provider_id = op.provider_id where o.managed = 'goauthentik.io/outposts/embedded' and a.slug = 'llm'"
 
 log "checking archives"
 for archive in "${RESTORED}"/*.tgz; do
