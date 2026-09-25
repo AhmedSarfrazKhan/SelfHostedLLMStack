@@ -79,11 +79,11 @@ fi
 # A fixed path inside the container, so every snapshot has the same paths and restic
 # can deduplicate against the previous one instead of treating each run as new data.
 log "restic backup"
-RESTIC_DOCKER_ARGS=(-v "${STAGING}:/backup/inference-stack:ro")
-restic backup /backup/inference-stack --tag inference-stack --quiet
+RESTIC_DOCKER_ARGS=(-v "${STAGING}:/backup/selfhostedllmstack:ro")
+restic backup /backup/selfhostedllmstack --tag selfhostedllmstack --quiet
 
 log "applying retention"
-restic forget --tag inference-stack \
+restic forget --tag selfhostedllmstack \
   --keep-hourly 24 --keep-daily 14 --keep-weekly 8 --keep-monthly 12 \
   --prune --quiet
 

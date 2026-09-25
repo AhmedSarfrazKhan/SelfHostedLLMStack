@@ -35,15 +35,15 @@ if [[ -z "${RESTIC_REPOSITORY:-}" || -z "${RESTIC_PASSWORD_FILE:-}" ]]; then
 fi
 
 PROJECT="$(docker compose config --format json 2>/dev/null \
-  | python3 -c 'import json,sys; print(json.load(sys.stdin)["name"])' 2>/dev/null || echo inference-stack)"
+  | python3 -c 'import json,sys; print(json.load(sys.stdin)["name"])' 2>/dev/null || echo selfhostedllmstack)"
 if docker volume inspect "${PROJECT}_authentik_db" >/dev/null 2>&1; then
   fail "volume ${PROJECT}_authentik_db exists. Refusing to recover over existing state."
 fi
 
 step "restoring snapshot ${SNAPSHOT_ARG}"
 RESTIC_DOCKER_ARGS=(-v "${WORKDIR}:/restore")
-restic restore "${SNAPSHOT_ARG}" --tag inference-stack --target /restore --quiet
-RESTORED="${WORKDIR}/backup/inference-stack"
+restic restore "${SNAPSHOT_ARG}" --tag selfhostedllmstack --target /restore --quiet
+RESTORED="${WORKDIR}/backup/selfhostedllmstack"
 [[ -s "${RESTORED}/authentik.dump" ]] || fail "snapshot has no authentik.dump"
 sed -n 's/^/    /p' "${RESTORED}/MANIFEST" | head -n 3
 

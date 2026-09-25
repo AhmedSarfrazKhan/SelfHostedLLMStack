@@ -39,7 +39,7 @@ jobs:
       - name: Snapshot the Authentik database
         id: snap
         run: |
-          dir=/var/backups/inference-stack
+          dir=/var/backups/selfhostedllmstack
           file="${dir}/pre-deploy-$(date +%Y%m%d-%H%M%S).dump"
           docker compose exec -T authentik-db pg_dump -U authentik -Fc authentik > "${file}"
           # A redirect creates the file before pg_dump writes to it, so a dump that

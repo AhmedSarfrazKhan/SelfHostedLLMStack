@@ -23,7 +23,7 @@
 #             call the model without going through SSO. See docs/openclaw-integration.md.
 #   authdb    Authentik and its database. Internal: no route out, no route in.
 
-name: inference-stack
+name: selfhostedllmstack
 
 x-authentik-env: &authentik-env
   AUTHENTIK_SECRET_KEY: ${AUTHENTIK_SECRET_KEY:?set AUTHENTIK_SECRET_KEY in .env}

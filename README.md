@@ -1,6 +1,6 @@
-# ai-inference-stack
+# Self Hosted LLM Stack
 
-[![CI](https://github.com/AhmedSarfrazKhan/ai-inference-stack/actions/workflows/ci.yml/badge.svg)](https://github.com/AhmedSarfrazKhan/ai-inference-stack/actions/workflows/ci.yml)
+[![CI](https://github.com/AhmedSarfrazKhan/SelfHostedLLMStack/actions/workflows/ci.yml/badge.svg)](https://github.com/AhmedSarfrazKhan/SelfHostedLLMStack/actions/workflows/ci.yml)
 
 A self-hosted AI inference stack that can be changed safely. A language model served by
 Ollama on a CPU, behind single sign-on, with every image and the model itself pinned
