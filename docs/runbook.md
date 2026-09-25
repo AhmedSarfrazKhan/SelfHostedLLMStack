@@ -133,8 +133,14 @@ token would cross the network in clear text.
 
 ## Backups
 
-- Timer: `deploy/systemd/inference-backup.timer`, every six hours.
-- Drill: `deploy/systemd/inference-restore-drill.timer`, weekly. History in
+Two ways to install the timers. `deploy/systemd/*` are system units for a dedicated
+service user (needs root). `deploy/systemd/user/*` are the same jobs as user units, for a
+host where the stack runs under a normal login account in the docker group; they need
+no root, only `loginctl enable-linger`. Use `systemctl --user` with the second kind.
+
+- Timer: `inference-backup.timer`, every six hours.
+- Drill: `inference-restore-drill.timer`, weekly. History in
   `backups/drill-history.log`.
-- Check both are actually firing: `systemctl list-timers 'inference-*'`.
+- Check both are actually firing: `systemctl list-timers 'inference-*'` (add `--user` for
+  user units), and read a run with `journalctl --user -u inference-backup.service`.
 - A failed drill is an incident, not a warning. See `docs/disaster-recovery.md`.

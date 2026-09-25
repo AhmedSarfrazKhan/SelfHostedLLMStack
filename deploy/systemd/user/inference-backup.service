@@ -1,0 +1,12 @@
+# User-level unit: no root needed. Install to ~/.config/systemd/user/, then
+#   systemctl --user daemon-reload && systemctl --user enable --now <name>.timer
+# Requires `loginctl enable-linger $USER` so it runs while you are logged out, and
+# membership of the docker group. Assumes the checkout is at ~/SelfHostedLLMStack.
+[Unit]
+Description=Back up the Self Hosted LLM Stack with restic
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/SelfHostedLLMStack
+ExecStart=%h/SelfHostedLLMStack/scripts/backup.sh
+Nice=10
