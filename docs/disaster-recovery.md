@@ -117,12 +117,43 @@ What the weekly drill does **not** prove: that the images and model can still be
 downloaded, or that Authentik starts on the restored data. The full rehearsal above
 does. Repeat it after any Authentik major upgrade, and at least quarterly.
 
+## Rehearsal: a bad deploy
+
+Performed on the development host on 2026-09-26. A deliberately bad release was
+committed locally (never pushed): the Caddyfile with the model-management filter removed
+from the internal listener, and the blueprint with an extra marker group, so the
+release changed both behaviour and data. Then `scripts/deploy.sh`. A watcher polled the
+database for the marker group throughout:
+
+| Time | Marker group | What happened |
+|---|---|---|
+| 03:28:21 | 0 | Pre-deploy snapshot taken |
+| 03:28:29 | 1 | Bad release deployed, blueprint applied: data changed |
+| | | Smoke test: `internal listener refuses /api/pull (expected 403, got 400)` |
+| 03:29:30 | 0 | Database restored from the snapshot, previous commit checked out |
+| | | Gateway restarted on the previous config, rollback smoke test passed |
+
+Getting to that result found four bugs, all fixed before this rehearsal passed:
+
+- A deploy of a changed Caddyfile reported "verified" while the gateway kept running the
+  old one. Caddy reads its config once at start and `docker compose up -d` does not
+  restart a container whose mounted file changed. Deploy and rollback now restart it.
+- Single-file and leaf-directory bind mounts go stale after `git pull` or `git checkout`,
+  because git replaces files rather than editing them. The blueprint directory was empty
+  inside the worker. Mounts are now parent directories, and the smoke test compares the
+  config the containers see with the checkout.
+- The blueprint check accepted objects left over from earlier applies even when the
+  current apply failed. It now requires the apply itself to succeed.
+- The deploy steps ran inside a function called from `if`, where bash silently disables
+  `set -e`, so only the last step's result counted. A failed model check was ignored
+  and the deploy reported "verified". The steps are now chained explicitly.
+
 ## Scenarios
 
 | Scenario | Action | Loss |
 |---|---|---|
 | Ollama container crashes | Restarts itself (`restart: unless-stopped`) | None |
-| Bad deploy | `deploy.yml` runs `rollback.sh`: database and code back together | None |
+| Bad deploy | `deploy.sh` runs `rollback.sh`: database, code and gateway config back together. Rehearsed, see below | None |
 | Model deleted or replaced by hand | `scripts/pull_model.sh` | None |
 | Model tag moved upstream | Nothing breaks; `pull_model.sh` refuses to pull | None |
 | Authentik database corrupted | `docker compose down -v`, then `recover.sh` | Up to RPO |

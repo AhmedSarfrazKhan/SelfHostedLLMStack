@@ -44,6 +44,11 @@ docker compose exec -T authentik-db pg_restore -U authentik -d authentik --no-ow
 
 log "bringing the stack back up on the previous code"
 docker compose up -d --wait
+# Same reason as in deploy.sh: Caddy only reads its config at start, so without this
+# the gateway would keep serving the config that just failed.
+docker compose restart gateway >/dev/null
+docker compose up -d --wait --wait-timeout 120 gateway
+"$(dirname "$0")/apply_blueprint.sh"
 
 if "$(dirname "$0")/smoke_test.sh"; then
   log "rollback complete, database and code both at ${PREV_SHA}"

@@ -23,7 +23,7 @@ set -euo pipefail
 # shellcheck source=scripts/lib.sh
 source "$(dirname "$0")/lib.sh"
 
-BLUEPRINT=selfhostedllmstack.yaml
+BLUEPRINT=blueprints/selfhostedllmstack.yaml
 ATTEMPTS="${BLUEPRINT_ATTEMPTS:-24}"
 
 sql() { docker compose exec -T authentik-db psql -U authentik -d authentik -tAc "$1"; }
@@ -45,10 +45,16 @@ state() {
       WHERE o.managed = 'goauthentik.io/outposts/embedded' AND a.slug = 'llm')"
 }
 
-log "applying config/authentik/blueprints/${BLUEPRINT}"
+log "applying config/authentik/${BLUEPRINT}"
 for attempt in $(seq 1 "${ATTEMPTS}"); do
-  docker compose exec -T authentik-worker ak apply_blueprint "custom/${BLUEPRINT}" >/dev/null 2>&1 || true
-  current="$(state 2>/dev/null || echo unavailable)"
+  # Both must hold: this apply succeeded, AND the objects are there. Objects alone
+  # are not enough, because they survive from earlier applies. A blueprint the worker
+  # cannot even read left them in place and this script used to report success.
+  if docker compose exec -T authentik-worker ak apply_blueprint "custom/${BLUEPRINT}" >/dev/null 2>&1; then
+    current="$(state 2>/dev/null || echo unavailable)"
+  else
+    current="apply-failed"
+  fi
   if [[ "${current}" == "${EXPECTED}" ]]; then
     log "blueprint applied (application, 2 policy bindings, service token, outpost binding)"
     break

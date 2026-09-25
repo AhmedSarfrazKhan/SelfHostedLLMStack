@@ -8,6 +8,7 @@
 # and the deploy workflow runs it after every deploy and rolls back if it fails.
 #
 # What it checks:
+#   0. The containers are running the config in this checkout.
 #   1. Ollama publishes no port on the host.
 #   2. The pinned model is present at its pinned digest.
 #   3. Unauthenticated requests to the LLM host are sent to Authentik.
@@ -93,6 +94,28 @@ User.objects.get(username='${MEMBER}').groups.add(Group.objects.get(name='llm-us
 }
 
 log "smoke test against ${LLM_EXTERNAL_URL} (model ${MODEL})"
+
+# 0. The containers are running the config in this checkout. Every other check tests
+# behaviour, and behaviour from stale config passes them all. That happened: a deploy of
+# a broken Caddyfile passed every check below because the gateway was still running the
+# previous one.
+same_file() { # same_file <service> <path in container> <path in checkout>
+  [[ "$(docker compose exec -T "$1" sha256sum "$2" 2>/dev/null | cut -d' ' -f1)" \
+     == "$(sha256sum "$3" | cut -d' ' -f1)" ]]
+}
+if same_file gateway /etc/caddy/Caddyfile config/caddy/Caddyfile \
+   && same_file authentik-worker /blueprints/custom/blueprints/selfhostedllmstack.yaml \
+                config/authentik/blueprints/selfhostedllmstack.yaml; then
+  pass "containers see the config in this checkout"
+else
+  bad "a container sees different config from this checkout (stale mount; recreate it)"
+fi
+started="$(date -d "$(docker inspect -f '{{.State.StartedAt}}' "$(docker compose ps -q gateway)")" +%s)"
+if (( $(stat -c %Y config/caddy/Caddyfile) <= started )); then
+  pass "gateway started after its config last changed"
+else
+  bad "Caddyfile changed after the gateway started, so it is not the config being served"
+fi
 
 # 1
 # `docker compose port` prints "invalid IP:0" and exits 0 when nothing is published,

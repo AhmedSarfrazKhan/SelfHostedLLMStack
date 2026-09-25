@@ -32,8 +32,8 @@ repository is about. Everything here exists because of something that goes wrong
 | Gateway | `config/caddy/Caddyfile` | Forward auth in front of the model; model management refused |
 | SSO as code | `config/authentik/blueprints/` | Provider, application, access policy, service account |
 | CI | `.github/workflows/ci.yml` | Static checks, then the full stack up, smoke test, backup, drill |
-| Deploy | `.github/workflows/deploy.yml` | Snapshot, deploy, smoke test, roll back on failure |
-| Smoke test | `scripts/smoke_test.sh` | 15 checks, from outside, the way clients use the stack |
+| Deploy | `scripts/deploy.sh` | Snapshot, deploy, smoke test, roll back database and code on failure |
+| Smoke test | `scripts/smoke_test.sh` | 17 checks: running config, then the stack from outside, the way clients use it |
 | Model guard | `scripts/pull_model.sh` | Refuses to pull if the registry digest moved |
 | Drift repair | `scripts/apply_blueprint.sh` | Re-applies the SSO blueprint on every deploy |
 | Rollback | `scripts/rollback.sh` | Restores the database **and** the code together |
