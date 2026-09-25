@@ -11,6 +11,6 @@ After=network-online.target docker.service
 [Service]
 Type=oneshot
 User=inference
-WorkingDirectory=/opt/ai-inference-stack
-ExecStart=/opt/ai-inference-stack/scripts/backup.sh
+WorkingDirectory=/opt/SelfHostedLLMStack
+ExecStart=/opt/SelfHostedLLMStack/scripts/backup.sh
 Nice=10

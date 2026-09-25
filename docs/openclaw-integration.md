@@ -100,7 +100,7 @@ Ollama or the database.
 When the assistant has a browser UI, protect it the same way the model is protected:
 
 1. Add a second `proxyprovider` and `application` to
-   `config/authentik/blueprints/inference-stack.yaml`, bound to a group, and add the
+   `config/authentik/blueprints/selfhostedllmstack.yaml`, bound to a group, and add the
    provider to the embedded outpost's `providers` list.
 2. Add a site block to `config/caddy/Caddyfile` with the same `forward_auth` stanza,
    proxying to the assistant on the `inference-llm` network.

@@ -39,7 +39,7 @@ Plus this repository, which is public.
 On a host with Docker and about 20 GB free:
 
 ```bash
-git clone <this repository> ai-inference-stack && cd ai-inference-stack
+git clone <this repository> SelfHostedLLMStack && cd SelfHostedLLMStack
 git checkout <commit from the snapshot's MANIFEST, or main>
 mkdir -p secrets && (umask 077; cat > secrets/restic-password)   # paste, then Ctrl-D
 

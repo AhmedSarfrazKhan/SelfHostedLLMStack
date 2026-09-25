@@ -14,7 +14,7 @@
 #   - the embedded outpost bound to the provider
 version: 1
 metadata:
-  name: inference-stack
+  name: selfhostedllmstack
   labels:
     blueprints.goauthentik.io/instantiate: "true"
 entries:

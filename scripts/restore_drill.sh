@@ -37,14 +37,14 @@ STARTED=$(date +%s)
 FAILED=0
 bad() { printf '    FAIL: %s\n' "$*" >&2; FAILED=1; }
 
-SNAPSHOT="$(restic snapshots --tag inference-stack --latest 1 --json \
+SNAPSHOT="$(restic snapshots --tag selfhostedllmstack --latest 1 --json \
   | python3 -c 'import json,sys; s=json.load(sys.stdin); print(s[-1]["short_id"] if s else "")')"
-[[ -n "${SNAPSHOT}" ]] || fail "no inference-stack snapshot in ${RESTIC_REPOSITORY}"
+[[ -n "${SNAPSHOT}" ]] || fail "no selfhostedllmstack snapshot in ${RESTIC_REPOSITORY}"
 
 log "restoring snapshot ${SNAPSHOT}"
 RESTIC_DOCKER_ARGS=(-v "${WORKDIR}:/restore")
 restic restore "${SNAPSHOT}" --target /restore --quiet
-RESTORED="${WORKDIR}/backup/inference-stack"
+RESTORED="${WORKDIR}/backup/selfhostedllmstack"
 [[ -f "${RESTORED}/MANIFEST" ]] || fail "snapshot ${SNAPSHOT} has no MANIFEST"
 sed -n 's/^\(created\|commit\): */    \1 /p' "${RESTORED}/MANIFEST"
 
@@ -75,7 +75,7 @@ expect "users"                                  1 "select count(*) from authenti
 expect "LLM gateway application"                1 "select count(*) from authentik_core_application where slug = 'llm'"
 expect "llm-users group bindings"               1 "select count(*) from authentik_policies_policybinding b join authentik_core_group g on g.group_uuid = b.group_id where g.name = 'llm-users'"
 expect "service account app passwords"          1 "select count(*) from authentik_core_token where intent = 'app_password'"
-expect "applied blueprints"                     1 "select count(*) from authentik_blueprints_blueprintinstance where name = 'inference-stack' and status = 'successful'"
+expect "applied blueprints"                     1 "select count(*) from authentik_blueprints_blueprintinstance where name = 'selfhostedllmstack' and status = 'successful'"
 
 log "checking archives"
 for archive in "${RESTORED}"/*.tgz; do

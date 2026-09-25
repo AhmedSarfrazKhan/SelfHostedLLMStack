@@ -16,11 +16,11 @@ set -euo pipefail
 # shellcheck source=scripts/lib.sh
 source "$(dirname "$0")/lib.sh"
 
-log "applying config/authentik/blueprints/inference-stack.yaml"
-docker compose exec -T authentik-worker ak apply_blueprint custom/inference-stack.yaml >/dev/null 2>&1 \
+log "applying config/authentik/blueprints/selfhostedllmstack.yaml"
+docker compose exec -T authentik-worker ak apply_blueprint custom/selfhostedllmstack.yaml >/dev/null 2>&1 \
   || fail "ak apply_blueprint failed; see: docker compose logs authentik-worker"
 
 status="$(docker compose exec -T authentik-db psql -U authentik -d authentik -tAc \
-  "SELECT status FROM authentik_blueprints_blueprintinstance WHERE name = 'inference-stack'")"
+  "SELECT status FROM authentik_blueprints_blueprintinstance WHERE name = 'selfhostedllmstack'")"
 [[ "${status}" == successful ]] || fail "blueprint status is '${status}', expected 'successful'"
 log "blueprint applied"
