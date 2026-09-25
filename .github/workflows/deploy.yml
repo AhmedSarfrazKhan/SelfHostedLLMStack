@@ -1,0 +1,76 @@
+name: Deploy
+
+# Snapshot, deploy, prove it works from the outside, roll back on failure.
+#
+# Manual trigger only in this reference repository, because it needs a self-hosted
+# runner on the production host and there is not one here. In a real deployment this is
+# `on: push: branches: [main]`, and since `main` only moves through CI-gated pull
+# requests, every change to production has passed the full integration job first.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: [self-hosted, production]
+    # The runner's checkout is the deployment. .env and secrets/ live in it and are
+    # gitignored, so `clean: false` keeps them between runs.
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+          clean: false
+
+      - name: Fail fast without configuration
+        run: |
+          [ -s .env ] || { echo "::error::.env is missing on the runner"; exit 1; }
+
+      - name: Record the commit we can roll back to
+        id: prev
+        run: echo "sha=$(git rev-parse HEAD~1)" >> "$GITHUB_OUTPUT"
+
+      - name: Snapshot the Authentik database
+        id: snap
+        run: |
+          dir=/var/backups/inference-stack
+          file="${dir}/pre-deploy-$(date +%Y%m%d-%H%M%S).dump"
+          docker compose exec -T authentik-db pg_dump -U authentik -Fc authentik > "${file}"
+          # A redirect creates the file before pg_dump writes to it, so a dump that
+          # died halfway leaves something that exists and looks fine. Catch it now,
+          # not at rollback time when there is nothing to fall back to.
+          [ -s "${file}" ] || { echo "::error::${file} is empty, refusing to deploy"; exit 1; }
+          docker compose exec -T authentik-db pg_restore --list < "${file}" >/dev/null
+          # Keep the last five, so the disk cannot fill one deploy at a time.
+          ls -1t "${dir}"/pre-deploy-*.dump | tail -n +6 | xargs -r rm --
+          echo "file=${file}" >> "$GITHUB_OUTPUT"
+
+      - name: Pull digest-pinned images
+        run: docker compose pull --quiet
+
+      - name: Deploy
+        run: docker compose up -d --wait --wait-timeout 600
+
+      - name: Apply the SSO blueprint
+        # Authentik does not re-apply blueprints on restart. Applying explicitly means
+        # every deploy converges on what the blueprint says, including undoing any
+        # access rule someone changed by hand in the admin UI.
+        run: scripts/apply_blueprint.sh
+
+      - name: Pull pinned models (refuses if upstream moved)
+        run: scripts/pull_model.sh
+
+      - name: Smoke test
+        # Healthy containers are not a working stack. This logs in through SSO, calls
+        # the model and checks the access rules, from outside, like a client would.
+        run: scripts/smoke_test.sh
+
+      - name: Roll back database and code together
+        if: failure() && steps.snap.outputs.file != ''
+        run: scripts/rollback.sh "${{ steps.snap.outputs.file }}" "${{ steps.prev.outputs.sha }}"

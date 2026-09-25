@@ -1,0 +1,22 @@
+# UNTESTED. The author has no NVIDIA GPU; this has never run on real hardware.
+# CI only checks that it renders. Read docs/gpu.md before relying on it.
+#
+#   docker compose -f compose.yaml -f compose.gpu.yaml up -d
+#
+# Requires the NVIDIA driver and the NVIDIA Container Toolkit on the host. The Ollama
+# image already bundles the CUDA runtime, which is why it is 9 GB.
+
+services:
+  ollama:
+    # A GPU host usually has room for a larger model and more than one request at a
+    # time. Change config/models.lock in the same pull request as any model change.
+    environment:
+      OLLAMA_NUM_PARALLEL: "2"
+    mem_limit: 8g
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]

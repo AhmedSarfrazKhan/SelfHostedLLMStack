@@ -1,0 +1,18 @@
+# Models this stack serves, pinned by manifest digest.
+#
+# An Ollama tag moves exactly like an image tag. `qwen2.5:1.5b` can be re-published
+# upstream, and a fresh pull on a rebuilt host would serve different weights than the
+# ones that were tested. scripts/pull_model.sh checks the registry digest BEFORE
+# pulling and refuses if it moved, because a pull overwrites the local copy and there
+# is no undo. scripts/assert_model.sh checks what is actually loaded.
+#
+# To change a model: update this file in a pull request. CI pulls it, runs the smoke
+# test against it, and only then can it merge.
+#
+# Why this model: 986 MB on disk, about 1.3 GB resident with an 8k context, supports
+# tool calling (the assistant needs it), and has no "thinking" mode burning CPU time
+# on tokens nobody reads. It is small. It is for proving the stack, and for tasks where
+# a small model is enough. See docs/gpu.md for what changes with more hardware.
+#
+# name            manifest digest (sha256)
+qwen2.5:1.5b      65ec06548149b04c096a120e4a6da9d4017ea809c91734ea5631e89f96ddc57b

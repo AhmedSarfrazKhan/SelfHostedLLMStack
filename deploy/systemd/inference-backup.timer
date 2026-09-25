@@ -1,0 +1,10 @@
+[Unit]
+Description=Timer for inference-backup.service
+
+[Timer]
+OnCalendar=*-*-* 00/6:15:00
+RandomizedDelaySec=10m
+Persistent=true
+
+[Install]
+WantedBy=timers.target

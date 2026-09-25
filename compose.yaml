@@ -1,0 +1,175 @@
+# Every image is pinned by digest, not by tag.
+#
+# A tag is a moving pointer. `ollama/ollama:0.34.4` today and in three months are not
+# guaranteed to be the same image, so a rebuild can ship something that was never
+# tested. A digest cannot move. scripts/check_digests.sh fails CI if any image in any
+# compose file is missing one.
+#
+# To update deliberately:
+#   docker pull ollama/ollama:<new tag>
+#   docker buildx imagetools inspect ollama/ollama:<new tag> --format '{{json .Manifest.Digest}}'
+# then paste the result below and open a pull request, so CI brings the whole stack up
+# on the new image before it reaches production.
+#
+# The model is pinned the same way, in config/models.lock.
+#
+# Networks, and why there are four:
+#
+#   edge      Caddy and the Authentik server. The only path in from the host.
+#   backend   Caddy and Ollama. Ollama publishes no port and is on no other network,
+#             so the only way to reach it is through Caddy, which filters it.
+#   llm       Caddy's internal listener, and nothing else yet. Fixed name so another
+#             compose project (the assistant) can join it as an external network and
+#             call the model without going through SSO. See docs/openclaw-integration.md.
+#   authdb    Authentik and its database. Internal: no route out, no route in.
+
+name: inference-stack
+
+x-authentik-env: &authentik-env
+  AUTHENTIK_SECRET_KEY: ${AUTHENTIK_SECRET_KEY:?set AUTHENTIK_SECRET_KEY in .env}
+  AUTHENTIK_POSTGRESQL__HOST: authentik-db
+  AUTHENTIK_POSTGRESQL__NAME: authentik
+  AUTHENTIK_POSTGRESQL__USER: authentik
+  AUTHENTIK_POSTGRESQL__PASSWORD: ${AUTHENTIK_DB_PASSWORD:?set AUTHENTIK_DB_PASSWORD in .env}
+  # Privacy defaults for a private stack. None of these change what Authentik does,
+  # only what it reports about itself to third parties.
+  AUTHENTIK_ERROR_REPORTING__ENABLED: "false"
+  AUTHENTIK_DISABLE_STARTUP_ANALYTICS: "true"
+  AUTHENTIK_DISABLE_UPDATE_CHECK: "true"
+  AUTHENTIK_AVATARS: initials
+  # Read by the blueprint in config/authentik/blueprints. Declared here rather than
+  # configured by clicking, so a restore onto a clean host produces the same SSO setup.
+  AUTH_EXTERNAL_URL: ${AUTH_EXTERNAL_URL:?set AUTH_EXTERNAL_URL in .env}
+  LLM_EXTERNAL_URL: ${LLM_EXTERNAL_URL:?set LLM_EXTERNAL_URL in .env}
+  LLM_CLIENT_TOKEN: ${LLM_CLIENT_TOKEN:?set LLM_CLIENT_TOKEN in .env}
+
+services:
+  ollama:
+    image: ollama/ollama:0.34.4@sha256:8262851b2846b87c649eddf3e76beb270c52f4d1bc94559f47efde16b0841551
+    environment:
+      OLLAMA_HOST: 0.0.0.0:11434
+      # One model, one request at a time. On a CPU with a few GB to spare, a second
+      # loaded model or a second parallel slot is how the host starts swapping and
+      # every request, not just the extra one, gets slow.
+      OLLAMA_MAX_LOADED_MODELS: "1"
+      OLLAMA_NUM_PARALLEL: "1"
+      OLLAMA_MAX_QUEUE: "32"
+      # Agents send long prompts: a system prompt, tool schemas, history. The 4k
+      # default truncates them silently, and silent truncation looks like a model
+      # that ignores its instructions.
+      OLLAMA_CONTEXT_LENGTH: ${OLLAMA_CONTEXT_LENGTH:-8192}
+      OLLAMA_KEEP_ALIVE: ${OLLAMA_KEEP_ALIVE:-30m}
+      # This stack exists to keep inference on this machine.
+      OLLAMA_NO_CLOUD: "1"
+    volumes:
+      - ollama_models:/root/.ollama
+    networks: [backend]
+    mem_limit: ${OLLAMA_MEM_LIMIT:-3g}
+    cpus: ${OLLAMA_CPUS:-4}
+    healthcheck:
+      # `ollama list` talks to the running server. A process that is up and a server
+      # that answers are different things.
+      test: ["CMD", "ollama", "list"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    restart: unless-stopped
+
+  authentik-db:
+    image: postgres:16.15-alpine@sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea
+    environment:
+      POSTGRES_DB: authentik
+      POSTGRES_USER: authentik
+      POSTGRES_PASSWORD: ${AUTHENTIK_DB_PASSWORD:?set AUTHENTIK_DB_PASSWORD in .env}
+    volumes:
+      - authentik_db:/var/lib/postgresql/data
+    networks: [authdb]
+    mem_limit: 256m
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -d authentik -U authentik"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    restart: unless-stopped
+
+  authentik-server:
+    image: ghcr.io/goauthentik/server:2026.8.3@sha256:ab9b4e8cc4ab3f8d1198d2db6aeea66bafea1963b3f2843589e0d163f97d9849
+    command: server
+    environment:
+      <<: *authentik-env
+      # First boot only. Creates akadmin with this password and an API token, then is
+      # ignored on every later start. Rotate the password in the UI after first login.
+      AUTHENTIK_BOOTSTRAP_PASSWORD: ${AUTHENTIK_BOOTSTRAP_PASSWORD:?set AUTHENTIK_BOOTSTRAP_PASSWORD in .env}
+      AUTHENTIK_BOOTSTRAP_EMAIL: ${AUTHENTIK_BOOTSTRAP_EMAIL:-admin@example.invalid}
+    depends_on:
+      authentik-db:
+        condition: service_healthy
+    volumes:
+      - authentik_data:/data
+      - ./config/authentik/blueprints:/blueprints/custom:ro
+    networks: [edge, authdb]
+    mem_limit: 1g
+    shm_size: 512mb
+    restart: unless-stopped
+
+  authentik-worker:
+    image: ghcr.io/goauthentik/server:2026.8.3@sha256:ab9b4e8cc4ab3f8d1198d2db6aeea66bafea1963b3f2843589e0d163f97d9849
+    command: worker
+    environment:
+      <<: *authentik-env
+    # Upstream's compose runs the worker as root with the Docker socket mounted, so
+    # Authentik can create outposts as containers. This stack uses the embedded
+    # outpost only, so the worker gets neither. A process that holds the Docker socket
+    # holds root on the host.
+    depends_on:
+      authentik-db:
+        condition: service_healthy
+    volumes:
+      - authentik_data:/data
+      - ./config/authentik/blueprints:/blueprints/custom:ro
+    networks: [authdb, edge]
+    mem_limit: 1g
+    shm_size: 512mb
+    restart: unless-stopped
+
+  gateway:
+    image: caddy:2.11.4-alpine@sha256:6aeddd44c3078b0f9a35206472a11420648a79c184603ef95957d0a20044cb2b
+    environment:
+      AUTH_HOST: ${AUTH_HOST:?set AUTH_HOST in .env}
+      LLM_HOST: ${LLM_HOST:?set LLM_HOST in .env}
+    depends_on:
+      ollama:
+        condition: service_healthy
+      authentik-server:
+        condition: service_healthy
+    ports:
+      # Loopback only. Put a TLS-terminating proxy or a tunnel in front of this for
+      # anything beyond the host; see docs/runbook.md. Nothing here listens publicly.
+      - "${GATEWAY_BIND:-127.0.0.1}:${GATEWAY_PORT:-8480}:80"
+    volumes:
+      - ./config/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+    networks: [edge, backend, llm]
+    mem_limit: 128m
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8081/api/version"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+networks:
+  edge:
+  backend:
+  llm:
+    name: inference-llm
+  authdb:
+    internal: true
+
+volumes:
+  ollama_models:
+  authentik_db:
+  authentik_data:
+  caddy_data:

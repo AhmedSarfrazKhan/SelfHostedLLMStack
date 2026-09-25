@@ -1,0 +1,73 @@
+# The gateway. Three listeners, one job each.
+#
+#   AUTH_HOST   Authentik itself: login pages, admin UI, API.
+#   LLM_HOST    The model, behind Authentik forward auth. For people in a browser and
+#               for remote clients sending HTTP Basic with a service account token.
+#   :8081       The model with no SSO, reachable only on the `inference-llm` Docker
+#               network. For services on this host, like the assistant, where the
+#               network is the boundary. Never published to the host.
+#
+# TLS is deliberately not terminated here. This listens on loopback and something in
+# front of it (a host proxy, a tunnel) owns certificates. Two things fighting over
+# ports 80 and 443 on one host is a common way to take down whatever else runs there.
+
+{
+	admin off
+	auto_https off
+	servers {
+		# Only trust X-Forwarded-* from private ranges, i.e. a proxy on this host or
+		# network. Without this a client could claim any source address.
+		trusted_proxies static private_ranges
+	}
+}
+
+# Ollama's model management API. Pull, push, create, copy and delete all work
+# unauthenticated against Ollama directly. Behind a gateway they would let any
+# signed-in user, or any service on the llm network, replace or delete the model
+# every other client depends on, or fill the disk. Models change through
+# scripts/pull_model.sh and a pull request, never over HTTP.
+(block_model_management) {
+	@model_management path /api/pull /api/push /api/create /api/copy /api/delete /api/blobs/*
+	respond @model_management "model management is not available through the gateway" 403
+}
+
+(to_ollama) {
+	reverse_proxy ollama:11434 {
+		# Ollama streams NDJSON. Without this Caddy may buffer a streamed response
+		# and a client sees nothing until generation finishes.
+		flush_interval -1
+		header_up Host localhost:11434
+	}
+}
+
+http://{$AUTH_HOST} {
+	log
+	reverse_proxy authentik-server:9000
+}
+
+http://{$LLM_HOST} {
+	log
+	route {
+		import block_model_management
+
+		# Authentik's outpost endpoints (the login callback, sign-out) live under
+		# this path on the protected host itself.
+		reverse_proxy /outpost.goauthentik.io/* authentik-server:9000
+
+		forward_auth authentik-server:9000 {
+			uri /outpost.goauthentik.io/auth/caddy
+			copy_headers X-Authentik-Username X-Authentik-Groups X-Authentik-Email X-Authentik-Uid
+			trusted_proxies private_ranges
+		}
+
+		import to_ollama
+	}
+}
+
+http://:8081 {
+	log
+	route {
+		import block_model_management
+		import to_ollama
+	}
+}

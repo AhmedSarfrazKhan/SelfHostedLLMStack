@@ -1,0 +1,98 @@
+# SSO configuration as code.
+#
+# Authentik applies every blueprint in /blueprints/custom on startup and again when
+# the file changes. Everything the gateway depends on is declared here, so a fresh
+# install, a restore onto a clean host, and CI all end up with the same setup, and a
+# change to who can reach the model goes through a pull request like any other change.
+#
+# What it creates:
+#   - a forward-auth proxy provider and application for the LLM host
+#   - an `llm-users` group, and a policy that only that group and Authentik admins
+#     can reach the model
+#   - a service account for the assistant, with an app password taken from
+#     LLM_CLIENT_TOKEN, for remote clients that send HTTP Basic
+#   - the embedded outpost bound to the provider
+version: 1
+metadata:
+  name: inference-stack
+  labels:
+    blueprints.goauthentik.io/instantiate: "true"
+entries:
+  - model: authentik_providers_proxy.proxyprovider
+    id: llm-provider
+    identifiers:
+      name: llm-gateway
+    attrs:
+      mode: forward_single
+      external_host: !Env LLM_EXTERNAL_URL
+      authorization_flow: !Find [authentik_flows.flow, [slug, default-provider-authorization-implicit-consent]]
+      invalidation_flow: !Find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]
+      # Lets non-browser clients authenticate with an Authorization header instead
+      # of a session cookie. Without it every API call gets a redirect to a login page.
+      intercept_header_auth: true
+      access_token_validity: hours=8
+
+  - model: authentik_core.application
+    id: llm-app
+    identifiers:
+      slug: llm
+    attrs:
+      name: LLM gateway
+      provider: !KeyOf llm-provider
+      meta_description: Local model served by Ollama
+      # Any one matching binding grants access.
+      policy_engine_mode: any
+
+  - model: authentik_core.group
+    id: llm-users
+    identifiers:
+      name: llm-users
+
+  # An application with no bindings is open to every user who can log in. Binding
+  # it to groups is what makes access a decision rather than a default.
+  - model: authentik_policies.policybinding
+    identifiers:
+      target: !KeyOf llm-app
+      group: !KeyOf llm-users
+    attrs:
+      order: 0
+
+  - model: authentik_policies.policybinding
+    identifiers:
+      target: !KeyOf llm-app
+      group: !Find [authentik_core.group, [name, authentik Admins]]
+    attrs:
+      order: 1
+
+  - model: authentik_core.user
+    id: svc-assistant
+    identifiers:
+      username: svc-assistant
+    attrs:
+      name: Assistant service account
+      type: service_account
+      path: services
+      groups:
+        - !KeyOf llm-users
+
+  - model: authentik_core.token
+    identifiers:
+      identifier: svc-assistant-llm
+    attrs:
+      user: !KeyOf svc-assistant
+      intent: app_password
+      key: !Env LLM_CLIENT_TOKEN
+      expiring: false
+      description: HTTP Basic credential for remote clients of the LLM gateway
+
+  - model: authentik_outposts.outpost
+    identifiers:
+      managed: goauthentik.io/outposts/embedded
+    attrs:
+      providers:
+        - !KeyOf llm-provider
+      config:
+        authentik_host: !Env AUTH_EXTERNAL_URL
+        authentik_host_browser: ""
+        authentik_host_insecure: false
+        log_level: info

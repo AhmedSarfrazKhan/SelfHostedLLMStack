@@ -1,0 +1,16 @@
+# Install: copy to /etc/systemd/system/, set WorkingDirectory and User, then
+#   systemctl daemon-reload && systemctl enable --now inference-restore-drill.timer
+# A failed run leaves the unit in a failed state, visible in
+#   systemctl --failed
+# Hook OnFailure= to whatever alerts you. A job that fails silently is not running.
+[Unit]
+Description=Restore drill for the inference stack
+Wants=network-online.target docker.service
+After=network-online.target docker.service
+
+[Service]
+Type=oneshot
+User=inference
+WorkingDirectory=/opt/ai-inference-stack
+ExecStart=/opt/ai-inference-stack/scripts/restore_drill.sh
+Nice=10

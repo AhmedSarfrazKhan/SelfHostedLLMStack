@@ -1,0 +1,4 @@
+# Follow `source "$(dirname "$0")/lib.sh"` so variables set in lib.sh and used
+# only inside it are not reported as unused.
+source-path=SCRIPTDIR
+external-sources=true

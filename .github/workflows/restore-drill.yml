@@ -1,0 +1,27 @@
+name: Restore drill
+
+# Weekly, against the production repository. An untested backup is a hypothesis, and
+# the point of a schedule is to find out on a Tuesday afternoon rather than during an
+# outage. CI also runs a drill on every pull request, against a backup it just made;
+# this one proves the real backups, not the mechanism.
+#
+# Manual trigger only here, for the same reason as deploy.yml. deploy/systemd has a
+# timer that does the same job without a runner. In a real deployment:
+#   schedule:
+#     - cron: '30 3 * * 1'
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  drill:
+    runs-on: [self-hosted, production]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          clean: false
+      - name: Restore the latest snapshot into a throwaway database, and time it
+        run: scripts/restore_drill.sh
