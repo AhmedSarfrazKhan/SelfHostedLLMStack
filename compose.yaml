@@ -58,7 +58,11 @@ services:
       # default truncates them silently, and silent truncation looks like a model
       # that ignores its instructions.
       OLLAMA_CONTEXT_LENGTH: ${OLLAMA_CONTEXT_LENGTH:-8192}
-      OLLAMA_KEEP_ALIVE: ${OLLAMA_KEEP_ALIVE:-30m}
+      # How long the model stays in memory after the last request. On a host where this
+      # stack shares 12 GB with other services, 30 minutes held 1.25 GiB for requests
+      # that mostly never came. Five minutes still covers a conversation; the cost is
+      # a reload of a few seconds on the first request after a pause.
+      OLLAMA_KEEP_ALIVE: ${OLLAMA_KEEP_ALIVE:-5m}
       # This stack exists to keep inference on this machine.
       OLLAMA_NO_CLOUD: "1"
     volumes:
