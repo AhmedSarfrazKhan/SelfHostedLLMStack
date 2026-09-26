@@ -82,6 +82,8 @@ drives the stack from outside:
 ```
 $ scripts/smoke_test.sh
 ==> smoke test against http://llm.localhost:8480 (model qwen2.5:1.5b)
+  ok    containers see the config in this checkout
+  ok    gateway started after its config last changed
   ok    ollama publishes no host port
   ok    model digest matches models.lock
   ok    unauthenticated request redirected to Authentik
@@ -108,8 +110,9 @@ deleted. `scripts/apply_blueprint.sh` now runs on every deploy and recovery, so 
 corrected rather than just detected.
 
 CI runs this against the full stack on every pull request, then takes a backup and runs
-the restore drill against it. The deploy workflow runs it after every deploy and rolls
-back when it fails.
+the restore drill against it. On the host, `scripts/deploy.sh` runs it after every
+deploy and, when it fails, restores the database and the previous commit together. That
+has been rehearsed with a deliberately bad release; see the DR plan.
 
 ## What the gate caught on its first day
 
@@ -194,6 +197,10 @@ scripts/pull_model.sh
 scripts/smoke_test.sh
 scripts/restic.sh init && scripts/backup.sh && scripts/restore_drill.sh
 ```
+
+After that, every change reaches the host the same way: merge a pull request through
+CI, then run `scripts/deploy.sh --pull` on the host. Backups and the weekly drill run
+from the timers in `deploy/systemd/user/` (no root needed) or `deploy/systemd/`.
 
 The gateway is on `127.0.0.1:8480`. Authentik is at `http://auth.localhost:8480`
 (user `akadmin`, password from `AUTHENTIK_BOOTSTRAP_PASSWORD` in `.env`); the model is
